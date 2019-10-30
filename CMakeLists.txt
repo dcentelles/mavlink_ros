@@ -91,33 +91,11 @@ ENDFOREACH()
 SET(SRCPATH src/)
 
 SET(${PROJECT_NAME}_INCLUDE_DIRS
-    ${catkin_INCLUDE_DIRS}
     ${SRCPATH}/include
     ${${MAVLINK_CPP_GIT}_INCLUDE_DIRS}
     ${${CONTROL_GIT}_INCLUDE_DIRS}
     ${${CPPUTILS_GIT}_INCLUDE_DIRS}
     )
-
-
-## Add support for C++11, supported in ROS Kinetic and newer
-add_definitions(-fPIC -std=c++14)
-
-include_directories(
-  ${${PROJECT_NAME}_INCLUDE_DIRS}
-)
-SET(${PROJECT_NAME}_CPP_FILES
-    ${SRCPATH}/OperatorController.cpp
-)
-
-add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
-target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${CONTROL_GIT} ${CPPUTILS_GIT})
-
-install(TARGETS ${PROJECT_NAME}
-        LIBRARY DESTINATION "lib"
-        RUNTIME DESTINATION "bin"
-        )
-install(DIRECTORY "${SRCPATH}/include/${PROJECT_NAME}" DESTINATION "include")
-
 
 catkin_package(
    LIBRARIES
@@ -133,5 +111,27 @@ catkin_package(
     std_msgs
     tf_conversions
 )
+
+
+## Add support for C++11, supported in ROS Kinetic and newer
+add_definitions(-fPIC -std=c++14)
+
+include_directories(
+  ${catkin_INCLUDE_DIRS}
+  ${${PROJECT_NAME}_INCLUDE_DIRS}
+)
+SET(${PROJECT_NAME}_CPP_FILES
+    ${SRCPATH}/OperatorController.cpp
+)
+
+add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
+target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${CONTROL_GIT} ${CPPUTILS_GIT})
+
+install(TARGETS ${PROJECT_NAME}
+        LIBRARY DESTINATION "lib"
+        RUNTIME DESTINATION "bin"
+        )
+install(DIRECTORY "${SRCPATH}/include/${PROJECT_NAME}" DESTINATION "include")
+
 
 message(STATUS "End ${PROJECT_NAME}")
