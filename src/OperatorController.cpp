@@ -60,13 +60,13 @@ void OperatorController::Start() {
     zoffsetPos = 0;
   } else {
     yawPID.SetConstants(vmax, vmin, 10, 20, 0.05);
-    xPID.SetConstants(vmax, vmin, 15, 60, 0.05);
-    yPID.SetConstants(vmax, vmin, 15, 60, 0.05);
+    xPID.SetConstants(vmax, vmin, 20, 60, 0.05);
+    yPID.SetConstants(vmax, vmin, 20, 60, 0.05);
     zPID.SetConstants(vmax, vmin, 20, 10, 0.05);
-    baseZ = 0;
-    yoffset = 90;
-    xoffset = 90;
-    roffset = 460;
+    baseZ = -20;
+    yoffset = 45;//90;
+    xoffset = 45;//90;
+    roffset = 440; //460;
     zoffset = 10;
     deadband = 0;
     zoffsetPos = 100;
