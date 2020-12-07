@@ -16,6 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   tf
   tf_conversions
+  mavlink_ros_msgs
 )
 
 SET(MODULES_DIR "modules" )
@@ -110,6 +111,7 @@ catkin_package(
     rospy
     std_msgs
     tf_conversions
+    mavlink_ros_msgs
 )
 
 
@@ -126,6 +128,7 @@ SET(${PROJECT_NAME}_CPP_FILES
 
 add_library(${PROJECT_NAME} SHARED ${${PROJECT_NAME}_CPP_FILES})
 target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES} ${MAVLINK_CPP_GIT} ${CONTROL_GIT} ${CPPUTILS_GIT})
+add_dependencies(${PROJECT_NAME} mavlink_ros_msgs_generate_messages_cpp)
 
 install(TARGETS ${PROJECT_NAME}
         LIBRARY DESTINATION "lib"

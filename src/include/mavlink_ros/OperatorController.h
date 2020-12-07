@@ -6,6 +6,7 @@
 #include <mavlink_cpp/GCS.h>
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
+#include <mavlink_ros_msgs/pid_debug.h>
 
 namespace mavlink_ros {
 
@@ -16,8 +17,12 @@ using namespace control;
 class OperatorController : public Logger {
 public:
   struct Params {
-    bool sitl;
+    bool sitl, use_tf;
+    std::string desired_robot_tf;
+    std::string robot_tf;
+    std::string ref_tf;
   };
+
   struct ControlState {
     double x, y, z, r;
     FLY_MODE_R mode;
@@ -57,9 +62,6 @@ private:
   // End PID
 
   Params _params;
-  std::string _ref_tf, _robot_tf, _desired_robot_tf;
-
-  bool tfMode = true;
 
   // FUNCTIONS
   double keepHeadingIteration(const double &dt, double diff);
@@ -80,6 +82,9 @@ private:
 
   std::mutex nedMerov_mutex, nedMtarget_mutex;
   std::condition_variable nedMerov_cond, nedMtarget_cond;
+
+  mavlink_ros_msgs::pid_debug pid_debug_msg;
+  ros::Publisher pid_debug_publisher;
 };
 
 } // namespace mavlink_ros

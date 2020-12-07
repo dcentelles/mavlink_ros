@@ -2,9 +2,9 @@
 #include <control/pid.h>
 #include <cpputils/Timer.h>
 #include <mavlink_cpp/GCS.h>
+#include <mavlink_ros/OperatorController.h>
 #include <tf/transform_broadcaster.h>
 #include <tf/transform_listener.h>
-#include <mavlink_ros/OperatorController.h>
 
 namespace mavlink_ros {
 
@@ -29,20 +29,27 @@ OperatorController::OperatorController(
   ControlState.arm = false;
   ControlState.mode = FLY_MODE_R::MANUAL;
 
-  _params = params;
-  _desired_robot_tf = "bluerov2_ghost";
-  _robot_tf = "erov";
-  _ref_tf = "local_origin_ned";
+  _params.sitl = params.sitl;
+  _params.use_tf = params.use_tf;
+  _params.desired_robot_tf = params.desired_robot_tf != ""
+                                 ? params.desired_robot_tf
+                                 : "bluerov2_ghost";
+  _params.robot_tf = params.robot_tf != "" ? params.robot_tf : "erov";
+  _params.ref_tf = params.ref_tf != "" ? params.ref_tf : "local_origin_ned";
+
+  ros::NodeHandle nh("operator_controller");
+  pid_debug_publisher =
+      nh.advertise<mavlink_ros_msgs::pid_debug>("pid_debug", 1);
 }
 
 void OperatorController::SetReferenceTfName(const std::string &ref) {
-  _ref_tf = ref;
+  _params.ref_tf = ref;
 }
 void OperatorController::SetRobotTfName(const std::string &ref) {
-  _robot_tf = ref;
+  _params.robot_tf = ref;
 }
 void OperatorController::SetDesiredPosTfName(const std::string &ref) {
-  _desired_robot_tf = ref;
+  _params.desired_robot_tf = ref;
 }
 
 void OperatorController::Start() {
@@ -64,9 +71,9 @@ void OperatorController::Start() {
     yPID.SetConstants(vmax, vmin, 20, 60, 0.05);
     zPID.SetConstants(vmax, vmin, 20, 10, 0.05);
     baseZ = -20;
-    yoffset = 45;//90;
-    xoffset = 45;//90;
-    roffset = 440; //460;
+    yoffset = 45;  // 90;
+    xoffset = 45;  // 90;
+    roffset = 440; // 460;
     zoffset = 10;
     deadband = 0;
     zoffsetPos = 100;
@@ -83,7 +90,9 @@ void OperatorController::ResetPID() {
   timer.Reset();
 }
 
-void OperatorController::SetTfMode(const bool &tfmode) { tfMode = tfmode; }
+void OperatorController::SetTfMode(const bool &tfmode) {
+  _params.use_tf = tfmode;
+}
 
 void OperatorController::SetnedMerov(const tf::Transform &transform) {
   std::unique_lock<std::mutex> lock(nedMerov_mutex);
@@ -105,8 +114,8 @@ bool OperatorController::GetnedMerov(tf::StampedTransform &transform) {
     nedMerov_cond.wait_for(lock, std::chrono::milliseconds(200));
   }
   if (nedMerovUpdated) {
-    transform =
-        tf::StampedTransform(_nedMerov, ros::Time::now(), _ref_tf, _robot_tf);
+    transform = tf::StampedTransform(_nedMerov, ros::Time::now(),
+                                     _params.ref_tf, _params.robot_tf);
     nedMerovUpdated = false;
     return true;
   }
@@ -119,8 +128,8 @@ bool OperatorController::GetnedMtarget(tf::StampedTransform &transform) {
     nedMtarget_cond.wait_for(lock, std::chrono::milliseconds(200));
   }
   if (nedMtargetUpdated) {
-    transform = tf::StampedTransform(_nedMtarget, ros::Time::now(), _ref_tf,
-                                     _desired_robot_tf);
+    transform = tf::StampedTransform(_nedMtarget, ros::Time::now(),
+                                     _params.ref_tf, _params.desired_robot_tf);
     nedMtargetUpdated = false;
     return true;
   }
@@ -135,25 +144,32 @@ void OperatorController::Loop() {
 
   double tyaw, cyaw;
   while (ros::ok()) {
-    if (ControlState.mode == GUIDED) {
+    if (ControlState.mode == GUIDED && ControlState.arm) {
       if (manual) {
+        Info("GUIDED ON");
         ResetPID();
         manual = false;
       }
-      if (tfMode) {
+      if (_params.use_tf) {
         try {
-          listener.lookupTransform(_ref_tf, _robot_tf, ros::Time(0), nedMerov);
-          listener.lookupTransform(_ref_tf, _desired_robot_tf, ros::Time(0),
-                                   nedMtarget);
+          listener.lookupTransform(_params.ref_tf, _params.robot_tf,
+                                   ros::Time(0), nedMerov);
+          listener.lookupTransform(_params.ref_tf, _params.desired_robot_tf,
+                                   ros::Time(0), nedMtarget);
         } catch (tf::TransformException &ex) {
-          Warn("TF: {}", ex.what());
+          Warn("Unable to get position info: {}", ex.what());
           Control->Arm(false);
           std::this_thread::sleep_for(std::chrono::milliseconds(50));
           continue;
         }
       } else {
-        if (!GetnedMerov(nedMerov) || !GetnedMtarget(nedMtarget))
+        if (!GetnedMerov(nedMerov) || !GetnedMtarget(nedMtarget)) {
+          Warn("Unable to get position info: rov position or target position "
+               "unavailable");
+          Control->Arm(false);
+          std::this_thread::sleep_for(std::chrono::milliseconds(50));
           continue;
+        }
       }
       Control->SetFlyMode(FLY_MODE_R::STABILIZE);
       Control->Arm(true);
@@ -221,13 +237,34 @@ void OperatorController::Loop() {
       else if (r < -deadband)
         r -= roffset;
 
-      Info("Send order: X: {} ({}) ; Y: {} ({}) ; Z: {} ({}) ; R: {} ;  rdiff: "
+      Info("T.DIST: {}", nedTerov.distance(nedTtarget));
+      Info("Send order: X: {} ({}) ; Y: {} ({}) ; Z: {} ({}) ; R: {} "
+           ";  rdiff: "
            "{} ; rout: {} "
-           "; rinput: {} ; Arm: {}",
-           x, vx, y, vy, z, vz, r, rdiff, rv0, rv0,
-           ControlState.arm ? "true" : "false");
+           "; rinput: {}",
+           x, vx, y, vy, z, vz, r, rdiff, rv0, rv0);
 
       Control->SetManualControl(x, y, z, r);
+
+      pid_debug_msg.pout_yaw = r;
+      pid_debug_msg.pout_x = x;
+      pid_debug_msg.pout_y = y;
+      pid_debug_msg.pout_z = z;
+      pid_debug_msg.error_yaw = rdiff;
+      pid_debug_msg.error_x = vTlpX;
+      pid_debug_msg.error_y = vTlpY;
+      pid_debug_msg.error_z = -vTlpZ;
+      pid_debug_msg.target_yaw = tyaw;
+      pid_debug_msg.target_x = nedTtarget.getX();
+      pid_debug_msg.target_y = nedTtarget.getY();
+      pid_debug_msg.target_z = nedTtarget.getZ();
+      pid_debug_msg.current_yaw = cyaw;
+      pid_debug_msg.current_x = nedTerov.getX();
+      pid_debug_msg.current_y = nedTerov.getY();
+      pid_debug_msg.current_z = nedTerov.getZ();
+
+      pid_debug_publisher.publish(pid_debug_msg);
+
       timer.Reset();
     } else {
       manual = true;
@@ -306,4 +343,4 @@ void OperatorController::GetLinearZVel(const double &dt, const double &diffz,
   vz = zPID.calculate(dt, 0, -diffz);
 }
 
-} // namespace wireless_ardusub
+} // namespace mavlink_ros
